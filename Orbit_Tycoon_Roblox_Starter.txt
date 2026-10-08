@@ -1,0 +1,956 @@
+ORBIT TYCOON — ROBLOX STARTER SYSTEMS
+ไฟล์นี้เป็นชุดเริ่มต้นสำหรับเกม Roblox ที่คุณเป็นเจ้าของหรือได้รับอนุญาตให้แก้ไข
+
+สิ่งที่มีให้:
+- เงิน Coins และเงินที่สะสมอยู่ในฐานของผู้เล่น
+- ตัวละครตัวอย่างที่เพิ่มรายได้ฐานตามพลัง
+- กดเก็บเงิน หรือซื้อ Auto Collector เพื่อเก็บให้อัตโนมัติ
+- Equip ตัวละครที่พลังสูงสุด
+- Dice roll เลือกพูล All / Rare+
+- ไข่ Starter / Premium และระบบ Wish ที่เพิ่มโอกาสตัวละครเป้าหมาย (ไม่การันตี)
+- ขายตัวละครที่อ่อนที่สุด โดยไม่ขายตัวที่กำลัง Equip
+- สวิตช์ AFK เพื่อรับรางวัลขณะยังอยู่ในเซิร์ฟเวอร์
+- Rebirth ที่รีเซ็ตเงิน/เงินค้าง แต่เก็บตัวละครและ Auto Collector พร้อมเพิ่มตัวคูณรายได้
+- บันทึกข้อมูลด้วย DataStore ฝั่งเซิร์ฟเวอร์
+- UI Orbit Panel พร้อมปุ่ม X ปิดหน้าต่าง
+
+ข้อจำกัดสำคัญ:
+- ตัวละครและไข่ด้านล่างเป็นข้อมูลตัวอย่าง ยังไม่ผูกกับโมเดล 3D, แท่นวางตัวละคร, หรือชิ้นส่วนฐานจากแผนที่ของคุณ
+- เงินในฐานเป็นค่าที่บันทึกแยกตามผู้เล่น ยังไม่ได้เชื่อมกับโครงสร้างฐานจริงในแผนที่
+- ไฟล์ map export ที่แนบมาเป็นเพียงข้อมูลส่งออก ไม่ใช่โค้ดเกมครบชุด จึงไม่สามารถเชื่อมระบบกับวัตถุในแผนที่ให้อัตโนมัติ
+- นำแต่ละส่วนไปวางในตำแหน่งตามขั้นตอน ห้ามวางทุกส่วนรวมเป็น Script เดียว
+
+ติดตั้งใน Roblox Studio:
+1. สร้าง ModuleScript ชื่อ GameConfig ใน ReplicatedStorage แล้ววางส่วน A
+2. สร้าง Script ชื่อ OrbitServer ใน ServerScriptService แล้ววางส่วน B
+3. สร้าง LocalScript ชื่อ OrbitClient ใน StarterPlayer > StarterPlayerScripts แล้ววางส่วน C
+4. Publish เกมของคุณ และเปิด Game Settings > Security > Enable Studio Access to API Services เพื่อทดสอบ DataStore ใน Studio
+5. ทดสอบด้วย Play; ระบบ RemoteEvent/RemoteFunction จะถูกสร้างโดย OrbitServer เอง
+
+กติกาตัวอย่างที่แก้ได้ใน GameConfig:
+- เริ่มต้น 500 Coins; Starter Egg 100; Premium Egg 500; Dice 50
+- Auto Collector ราคา 1,500 Coins
+- AFK ให้ 75 Coins ต่อนาที (ขณะผู้เล่นยังอยู่ในเซิร์ฟเวอร์)
+- Rebirth เริ่มที่ 5,000 Coins และค่าครั้งต่อไปเพิ่มขึ้น
+- Wish เพิ่มน้ำหนักการสุ่มของตัวละครที่เลือก แต่ไม่การันตี
+
+============================================================
+ส่วน A — ModuleScript: ReplicatedStorage > GameConfig
+============================================================
+
+local Config = {}
+
+Config.DataStoreName = "OrbitTycoonData_v1"
+Config.StartingCoins = 500
+Config.MaxCurrency = 2000000000
+Config.MaxInventory = 150
+
+Config.BaseTickSeconds = 5
+Config.BaseIncomePerPower = 2
+Config.AutoCollectorPrice = 1500
+
+Config.DiceCost = 50
+Config.DicePools = { "All", "RarePlus" }
+
+Config.AFKRewardInterval = 60
+Config.AFKReward = 75
+
+Config.RebirthRequirement = 5000
+Config.RebirthIncomeBonus = 0.25
+Config.WishWeightMultiplier = 2.5
+Config.ActionCooldown = 0.3
+
+-- ปรับชื่อ/พลัง/น้ำหนัก/ราคาขายได้ตามเกมของคุณ
+Config.Characters = {
+    { Id = "sprout", Name = "Sprout", Rarity = "Common", Power = 1, Weight = 60, SellValue = 25 },
+    { Id = "fox", Name = "Ember Fox", Rarity = "Uncommon", Power = 3, Weight = 25, SellValue = 80 },
+    { Id = "golem", Name = "Stone Golem", Rarity = "Rare", Power = 8, Weight = 12, SellValue = 250 },
+    { Id = "phoenix", Name = "Solar Phoenix", Rarity = "Legendary", Power = 20, Weight = 3, SellValue = 800 },
+}
+
+Config.EggOrder = { "Starter", "Premium" }
+Config.Eggs = {
+    Starter = {
+        Name = "Starter Egg",
+        Price = 100,
+        Rewards = { sprout = 60, fox = 25, golem = 12, phoenix = 3 },
+    },
+    Premium = {
+        Name = "Premium Egg",
+        Price = 500,
+        Rewards = { fox = 35, golem = 40, phoenix = 25 },
+    },
+}
+
+return Config
+
+============================================================
+ส่วน B — Script: ServerScriptService > OrbitServer
+============================================================
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataStoreService = game:GetService("DataStoreService")
+
+local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
+local Store = DataStoreService:GetDataStore(Config.DataStoreName)
+local Randomizer = Random.new()
+
+local function getOrCreate(parent, className, name)
+    local item = parent:FindFirstChild(name)
+    if item and item.ClassName == className then
+        return item
+    end
+    if item then
+        item:Destroy()
+    end
+    item = Instance.new(className)
+    item.Name = name
+    item.Parent = parent
+    return item
+end
+
+local RemoteFolder = getOrCreate(ReplicatedStorage, "Folder", "OrbitRemotes")
+local Request = getOrCreate(RemoteFolder, "RemoteEvent", "Request")
+local Sync = getOrCreate(RemoteFolder, "RemoteEvent", "Sync")
+local Fetch = getOrCreate(RemoteFolder, "RemoteFunction", "Fetch")
+
+local Profiles = {}
+local Loading = {}
+local Saving = {}
+local LastAction = {}
+local LastAFKReward = {}
+
+local function findCharacter(characterId)
+    for _, character in ipairs(Config.Characters) do
+        if character.Id == characterId then
+            return character
+        end
+    end
+    return nil
+end
+
+local function safeInteger(value, fallback, maximum)
+    if type(value) ~= "number" or value ~= value then
+        return fallback
+    end
+    return math.clamp(math.floor(value), 0, maximum)
+end
+
+local function newProfile()
+    local starter = Config.Characters[1]
+    local starterId = starter and starter.Id or "sprout"
+    local wishId = Config.Characters[2] and Config.Characters[2].Id or starterId
+    return {
+        coins = Config.StartingCoins,
+        stored = 0,
+        rebirths = 0,
+        autoCollector = false,
+        afk = false,
+        inventory = { { uid = "unit1", characterId = starterId } },
+        equippedUid = "unit1",
+        nextUid = 2,
+        dicePool = "All",
+        wishId = wishId,
+    }
+end
+
+local function normalizeProfile(saved)
+    local data = newProfile()
+    if type(saved) ~= "table" then
+        return data
+    end
+
+    data.coins = safeInteger(saved.coins, Config.StartingCoins, Config.MaxCurrency)
+    data.stored = safeInteger(saved.stored, 0, Config.MaxCurrency)
+    data.rebirths = safeInteger(saved.rebirths, 0, 1000000)
+    data.autoCollector = saved.autoCollector == true
+    data.dicePool = saved.dicePool == "RarePlus" and "RarePlus" or "All"
+    if findCharacter(saved.wishId) then
+        data.wishId = saved.wishId
+    end
+
+    data.inventory = {}
+    local seenUids = {}
+    if type(saved.inventory) == "table" then
+        for index, entry in ipairs(saved.inventory) do
+            if #data.inventory >= Config.MaxInventory then
+                break
+            end
+            if type(entry) == "table" and findCharacter(entry.characterId) then
+                local uid = tostring(entry.uid or ("saved" .. index)):sub(1, 40)
+                if seenUids[uid] then
+                    uid = "saved" .. index
+                end
+                seenUids[uid] = true
+                table.insert(data.inventory, {
+                    uid = uid,
+                    characterId = entry.characterId,
+                })
+            end
+        end
+    end
+
+    if #data.inventory == 0 then
+        local starter = Config.Characters[1]
+        if starter then
+            data.inventory = { { uid = "unit1", characterId = starter.Id } }
+        end
+    end
+
+    local equippedExists = false
+    for _, entry in ipairs(data.inventory) do
+        if entry.uid == saved.equippedUid then
+            equippedExists = true
+            break
+        end
+    end
+    if equippedExists then
+        data.equippedUid = saved.equippedUid
+    else
+        data.equippedUid = data.inventory[1] and data.inventory[1].uid or nil
+    end
+
+    data.nextUid = math.max(safeInteger(saved.nextUid, #data.inventory + 1, 100000000), #data.inventory + 1)
+    data.afk = false -- AFK ไม่ติดไปตอนออกแล้วเข้าเกมใหม่
+    return data
+end
+
+local function updateLeaderstats(player, data)
+    local leaderstats = player:FindFirstChild("leaderstats")
+    if not leaderstats then
+        leaderstats = Instance.new("Folder")
+        leaderstats.Name = "leaderstats"
+        leaderstats.Parent = player
+    end
+    local coins = leaderstats:FindFirstChild("Coins") or Instance.new("IntValue")
+    coins.Name = "Coins"
+    coins.Value = data.coins
+    coins.Parent = leaderstats
+    local rebirths = leaderstats:FindFirstChild("Rebirths") or Instance.new("IntValue")
+    rebirths.Name = "Rebirths"
+    rebirths.Value = data.rebirths
+    rebirths.Parent = leaderstats
+end
+
+local function getEquipped(data)
+    for _, entry in ipairs(data.inventory) do
+        if entry.uid == data.equippedUid then
+            return entry, findCharacter(entry.characterId)
+        end
+    end
+    return nil, nil
+end
+
+local function getSnapshot(player, message)
+    local data = Profiles[player]
+    if not data then
+        return nil
+    end
+
+    local _, equipped = getEquipped(data)
+    local characters = {}
+    for _, character in ipairs(Config.Characters) do
+        table.insert(characters, {
+            id = character.Id,
+            name = character.Name,
+            rarity = character.Rarity,
+        })
+    end
+
+    local eggs = {}
+    for _, eggId in ipairs(Config.EggOrder) do
+        local egg = Config.Eggs[eggId]
+        if egg then
+            table.insert(eggs, { id = eggId, name = egg.Name, price = egg.Price })
+        end
+    end
+
+    local rebirthCost = Config.RebirthRequirement * (data.rebirths + 1)
+    local result = {
+        coins = data.coins,
+        stored = data.stored,
+        rebirths = data.rebirths,
+        rebirthCost = rebirthCost,
+        autoCollector = data.autoCollector,
+        afk = data.afk,
+        dicePool = data.dicePool,
+        wishId = data.wishId,
+        wishName = (findCharacter(data.wishId) and findCharacter(data.wishId).Name) or "None",
+        equippedName = equipped and equipped.Name or "None",
+        equippedPower = equipped and equipped.Power or 0,
+        inventoryCount = #data.inventory,
+        autoCollectorPrice = Config.AutoCollectorPrice,
+        diceCost = Config.DiceCost,
+        characters = characters,
+        eggs = eggs,
+    }
+    if message then
+        result.message = message
+    end
+    return result
+end
+
+local function syncPlayer(player, message)
+    if player.Parent then
+        local snapshot = getSnapshot(player, message)
+        if snapshot then
+            Sync:FireClient(player, snapshot)
+        end
+    end
+end
+
+local function notify(player, message)
+    local data = Profiles[player]
+    if not data then
+        return
+    end
+    updateLeaderstats(player, data)
+    syncPlayer(player, message)
+end
+
+local function serializeProfile(data)
+    local inventory = {}
+    for _, entry in ipairs(data.inventory) do
+        table.insert(inventory, {
+            uid = entry.uid,
+            characterId = entry.characterId,
+        })
+    end
+    return {
+        coins = data.coins,
+        stored = data.stored,
+        rebirths = data.rebirths,
+        autoCollector = data.autoCollector,
+        inventory = inventory,
+        equippedUid = data.equippedUid,
+        nextUid = data.nextUid,
+        dicePool = data.dicePool,
+        wishId = data.wishId,
+    }
+end
+
+local function saveNow(player)
+    local data = Profiles[player]
+    if not data or Saving[player] then
+        return false
+    end
+    Saving[player] = true
+    local payload = serializeProfile(data)
+    local success, err = pcall(function()
+        Store:UpdateAsync("user_" .. player.UserId, function()
+            return payload
+        end)
+    end)
+    Saving[player] = nil
+    if not success then
+        warn("Orbit save failed for " .. player.Name .. ": " .. tostring(err))
+    end
+    return success
+end
+
+local function loadPlayer(player)
+    if Loading[player] or Profiles[player] then
+        return
+    end
+    Loading[player] = true
+    local success, saved = pcall(function()
+        return Store:GetAsync("user_" .. player.UserId)
+    end)
+    Loading[player] = nil
+
+    if not player.Parent then
+        return
+    end
+    if not success then
+        warn("Orbit load failed for " .. player.Name .. ": " .. tostring(saved))
+        player:Kick("Could not load your saved data. Please rejoin in a moment.")
+        return
+    end
+
+    Profiles[player] = normalizeProfile(saved)
+    LastAction[player] = 0
+    LastAFKReward[player] = os.clock()
+    updateLeaderstats(player, Profiles[player])
+    syncPlayer(player, "Welcome to Orbit Tycoon!")
+end
+
+local function addCharacter(data, character)
+    if #data.inventory >= Config.MaxInventory then
+        return false
+    end
+    local uid = "unit" .. tostring(data.nextUid)
+    data.nextUid += 1
+    table.insert(data.inventory, { uid = uid, characterId = character.Id })
+    return true
+end
+
+local function weightedCharacter(weights, wishId)
+    local choices = {}
+    local totalWeight = 0
+    for characterId, weight in pairs(weights) do
+        local character = findCharacter(characterId)
+        if character and type(weight) == "number" and weight > 0 then
+            local finalWeight = weight
+            if characterId == wishId then
+                finalWeight *= Config.WishWeightMultiplier
+            end
+            totalWeight += finalWeight
+            table.insert(choices, { character = character, weight = finalWeight })
+        end
+    end
+    if totalWeight <= 0 then
+        return nil
+    end
+    local result = Randomizer:NextNumber(0, totalWeight)
+    local running = 0
+    for _, choice in ipairs(choices) do
+        running += choice.weight
+        if result <= running then
+            return choice.character
+        end
+    end
+    return choices[#choices].character
+end
+
+local function rollWithCost(data, weights, cost)
+    local character = weightedCharacter(weights, data.wishId)
+    if not character then
+        return false, "No valid characters are configured for this roll."
+    end
+    if #data.inventory >= Config.MaxInventory then
+        return false, "Inventory is full; sell a character first."
+    end
+    if data.coins < cost then
+        return false, "Not enough Coins."
+    end
+    data.coins -= cost
+    addCharacter(data, character)
+    return true, "You got " .. character.Name .. "!"
+end
+
+local function bestInventoryEntry(data)
+    local bestEntry = nil
+    local bestCharacter = nil
+    for _, entry in ipairs(data.inventory) do
+        local character = findCharacter(entry.characterId)
+        if character and (not bestCharacter or character.Power > bestCharacter.Power) then
+            bestEntry = entry
+            bestCharacter = character
+        end
+    end
+    return bestEntry, bestCharacter
+end
+
+local function handleAction(player, action, argument)
+    local data = Profiles[player]
+    if not data or type(action) ~= "string" then
+        return
+    end
+    local now = os.clock()
+    if now - (LastAction[player] or 0) < Config.ActionCooldown then
+        return
+    end
+    LastAction[player] = now
+
+    local message = ""
+    if action == "collect" then
+        if data.stored <= 0 then
+            message = "Your base has no stored Coins yet."
+        else
+            local amount = data.stored
+            data.coins = math.min(Config.MaxCurrency, data.coins + amount)
+            data.stored = 0
+            message = "Collected " .. tostring(amount) .. " Coins."
+        end
+
+    elseif action == "buyAuto" then
+        if data.autoCollector then
+            message = "You already own the Auto Collector."
+        elseif data.coins < Config.AutoCollectorPrice then
+            message = "You need " .. tostring(Config.AutoCollectorPrice) .. " Coins for the Auto Collector."
+        else
+            data.coins -= Config.AutoCollectorPrice
+            data.autoCollector = true
+            message = "Auto Collector purchased! It will collect base Coins automatically."
+        end
+
+    elseif action == "equipBest" then
+        local entry, character = bestInventoryEntry(data)
+        if entry and character then
+            data.equippedUid = entry.uid
+            message = "Equipped your strongest character: " .. character.Name .. "."
+        else
+            message = "You do not have a character to equip."
+        end
+
+    elseif action == "nextDicePool" then
+        data.dicePool = data.dicePool == "All" and "RarePlus" or "All"
+        message = "Dice pool set to " .. data.dicePool .. "."
+
+    elseif action == "rollDice" then
+        local weights = {}
+        for _, character in ipairs(Config.Characters) do
+            if data.dicePool == "All" or character.Rarity ~= "Common" then
+                weights[character.Id] = character.Weight
+            end
+        end
+        local ok, resultMessage = rollWithCost(data, weights, Config.DiceCost)
+        message = ok and ("Dice: " .. resultMessage) or resultMessage
+
+    elseif action == "setWish" then
+        if type(argument) == "string" and findCharacter(argument) then
+            data.wishId = argument
+            local character = findCharacter(argument)
+            message = "Wish target set to " .. character.Name .. ". It improves the odds, but is not guaranteed."
+        else
+            message = "That Wish target is not valid."
+        end
+
+    elseif action == "openEgg" then
+        local egg = type(argument) == "string" and Config.Eggs[argument] or nil
+        if not egg then
+            message = "That egg is not available."
+        else
+            local ok, resultMessage = rollWithCost(data, egg.Rewards, egg.Price)
+            message = ok and (egg.Name .. ": " .. resultMessage) or resultMessage
+        end
+
+    elseif action == "sellWeakest" then
+        local weakestIndex = nil
+        local weakestCharacter = nil
+        for index, entry in ipairs(data.inventory) do
+            if entry.uid ~= data.equippedUid then
+                local character = findCharacter(entry.characterId)
+                if character and (not weakestCharacter or character.Power < weakestCharacter.Power) then
+                    weakestIndex = index
+                    weakestCharacter = character
+                end
+            end
+        end
+        if not weakestIndex then
+            message = "No spare character to sell. Your equipped character is protected."
+        else
+            table.remove(data.inventory, weakestIndex)
+            local value = safeInteger(weakestCharacter.SellValue, 0, Config.MaxCurrency)
+            data.coins = math.min(Config.MaxCurrency, data.coins + value)
+            message = "Sold " .. weakestCharacter.Name .. " for " .. tostring(value) .. " Coins."
+        end
+
+    elseif action == "toggleAFK" then
+        data.afk = not data.afk
+        LastAFKReward[player] = now
+        message = data.afk and "AFK rewards enabled while you remain in this server." or "AFK rewards disabled."
+
+    elseif action == "rebirth" then
+        local cost = Config.RebirthRequirement * (data.rebirths + 1)
+        if data.coins < cost then
+            message = "You need " .. tostring(cost) .. " Coins to Rebirth."
+        else
+            data.coins = Config.StartingCoins
+            data.stored = 0
+            data.rebirths += 1
+            message = "Rebirth complete! Base income multiplier increased."
+        end
+
+    else
+        message = "Unknown action."
+    end
+
+    notify(player, message)
+end
+
+Request.OnServerEvent:Connect(handleAction)
+
+Fetch.OnServerInvoke = function(player)
+    local deadline = os.clock() + 15
+    while player.Parent and not Profiles[player] and os.clock() < deadline do
+        task.wait(0.1)
+    end
+    return getSnapshot(player)
+end
+
+Players.PlayerAdded:Connect(function(player)
+    task.spawn(loadPlayer, player)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    local deadline = os.clock() + 15
+    while Loading[player] and os.clock() < deadline do
+        task.wait(0.1)
+    end
+    local saveDeadline = os.clock() + 10
+    while Saving[player] and os.clock() < saveDeadline do
+        task.wait(0.1)
+    end
+    saveNow(player)
+    Profiles[player] = nil
+    Loading[player] = nil
+    LastAction[player] = nil
+    LastAFKReward[player] = nil
+end)
+
+for _, player in ipairs(Players:GetPlayers()) do
+    task.spawn(loadPlayer, player)
+end
+
+task.spawn(function()
+    while true do
+        task.wait(Config.BaseTickSeconds)
+        local now = os.clock()
+        for player, data in pairs(Profiles) do
+            local _, equipped = getEquipped(data)
+            local power = equipped and equipped.Power or 1
+            local multiplier = 1 + data.rebirths * Config.RebirthIncomeBonus
+            local income = math.max(1, math.floor(power * Config.BaseIncomePerPower * multiplier))
+            data.stored = math.min(Config.MaxCurrency, data.stored + income)
+
+            if data.autoCollector and data.stored > 0 then
+                data.coins = math.min(Config.MaxCurrency, data.coins + data.stored)
+                data.stored = 0
+            end
+
+            if data.afk and now - (LastAFKReward[player] or now) >= Config.AFKRewardInterval then
+                local afkAmount = math.floor(Config.AFKReward * multiplier)
+                data.coins = math.min(Config.MaxCurrency, data.coins + afkAmount)
+                LastAFKReward[player] = now
+            end
+
+            updateLeaderstats(player, data)
+            syncPlayer(player)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(60)
+        for player in pairs(Profiles) do
+            task.spawn(saveNow, player)
+        end
+    end
+end)
+
+game:BindToClose(function()
+    local pending = 0
+    for player in pairs(Profiles) do
+        pending += 1
+        task.spawn(function()
+            saveNow(player)
+            pending -= 1
+        end)
+    end
+    local deadline = os.clock() + 25
+    while pending > 0 and os.clock() < deadline do
+        task.wait(0.1)
+    end
+end)
+
+============================================================
+ส่วน C — LocalScript: StarterPlayerScripts > OrbitClient
+============================================================
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local player = Players.LocalPlayer
+local remotes = ReplicatedStorage:WaitForChild("OrbitRemotes")
+local Request = remotes:WaitForChild("Request")
+local Sync = remotes:WaitForChild("Sync")
+local Fetch = remotes:WaitForChild("Fetch")
+
+local oldGui = player:WaitForChild("PlayerGui"):FindFirstChild("OrbitPanelGui")
+if oldGui then
+    oldGui:Destroy()
+end
+
+local function add(className, parent, properties)
+    local object = Instance.new(className)
+    for property, value in pairs(properties) do
+        object[property] = value
+    end
+    object.Parent = parent
+    return object
+end
+
+local gui = add("ScreenGui", player.PlayerGui, {
+    Name = "OrbitPanelGui",
+    ResetOnSpawn = false,
+    IgnoreGuiInset = true,
+    DisplayOrder = 50,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+})
+
+local panel = add("Frame", gui, {
+    Name = "Panel",
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    Position = UDim2.fromScale(0.5, 0.5),
+    Size = UDim2.new(0.94, 0, 0.84, 0),
+    BackgroundColor3 = Color3.fromRGB(20, 25, 38),
+    BorderSizePixel = 0,
+})
+add("UISizeConstraint", panel, {
+    MinSize = Vector2.new(300, 420),
+    MaxSize = Vector2.new(500, 650),
+})
+add("UICorner", panel, { CornerRadius = UDim.new(0, 16) })
+add("UIStroke", panel, {
+    Color = Color3.fromRGB(68, 83, 115),
+    Thickness = 1,
+    Transparency = 0.2,
+})
+add("UIGradient", panel, {
+    Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(29, 38, 59)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(17, 21, 32)),
+    }),
+    Rotation = 90,
+})
+
+local title = add("TextLabel", panel, {
+    BackgroundTransparency = 1,
+    Position = UDim2.fromOffset(20, 12),
+    Size = UDim2.new(1, -80, 0, 34),
+    Font = Enum.Font.GothamBold,
+    Text = "Orbit Tycoon",
+    TextColor3 = Color3.fromRGB(242, 246, 255),
+    TextSize = 20,
+    TextXAlignment = Enum.TextXAlignment.Left,
+})
+
+local closeButton = add("TextButton", panel, {
+    Name = "CloseButton",
+    AnchorPoint = Vector2.new(1, 0),
+    Position = UDim2.new(1, -14, 0, 12),
+    Size = UDim2.fromOffset(34, 34),
+    BackgroundColor3 = Color3.fromRGB(46, 53, 70),
+    BorderSizePixel = 0,
+    Font = Enum.Font.Gotham,
+    Text = "×",
+    TextColor3 = Color3.fromRGB(240, 244, 255),
+    TextSize = 26,
+})
+add("UICorner", closeButton, { CornerRadius = UDim.new(0, 10) })
+closeButton.Activated:Connect(function()
+    gui:Destroy()
+end)
+
+local statsLabel = add("TextLabel", panel, {
+    BackgroundTransparency = 1,
+    Position = UDim2.fromOffset(20, 54),
+    Size = UDim2.new(1, -40, 0, 42),
+    Font = Enum.Font.GothamBold,
+    Text = "Loading your saved data...",
+    TextColor3 = Color3.fromRGB(214, 226, 248),
+    TextSize = 13,
+    TextWrapped = true,
+    TextXAlignment = Enum.TextXAlignment.Left,
+})
+
+local detailLabel = add("TextLabel", panel, {
+    BackgroundTransparency = 1,
+    Position = UDim2.fromOffset(20, 97),
+    Size = UDim2.new(1, -40, 0, 25),
+    Font = Enum.Font.Gotham,
+    Text = "",
+    TextColor3 = Color3.fromRGB(149, 171, 205),
+    TextSize = 11,
+    TextWrapped = true,
+    TextXAlignment = Enum.TextXAlignment.Left,
+})
+
+local messageLabel = add("TextLabel", panel, {
+    BackgroundTransparency = 1,
+    Position = UDim2.fromOffset(20, 122),
+    Size = UDim2.new(1, -40, 0, 24),
+    Font = Enum.Font.Gotham,
+    Text = "Choose an action below.",
+    TextColor3 = Color3.fromRGB(117, 220, 165),
+    TextSize = 12,
+    TextWrapped = true,
+    TextXAlignment = Enum.TextXAlignment.Left,
+})
+
+local scroll = add("ScrollingFrame", panel, {
+    Name = "Actions",
+    Position = UDim2.fromOffset(16, 151),
+    Size = UDim2.new(1, -32, 1, -165),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ScrollBarThickness = 5,
+    CanvasSize = UDim2.new(0, 0, 0, 0),
+    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    ScrollingDirection = Enum.ScrollingDirection.Y,
+})
+add("UIPadding", scroll, {
+    PaddingLeft = UDim.new(0, 3),
+    PaddingRight = UDim.new(0, 7),
+    PaddingTop = UDim.new(0, 2),
+    PaddingBottom = UDim.new(0, 8),
+})
+add("UIListLayout", scroll, {
+    Padding = UDim.new(0, 8),
+    SortOrder = Enum.SortOrder.LayoutOrder,
+})
+
+local buttons = {}
+local currentState = nil
+local selectedEggId = nil
+local renderState
+
+local function makeButton(key, label, order, callback)
+    local button = add("TextButton", scroll, {
+        Name = key,
+        LayoutOrder = order,
+        Size = UDim2.new(1, 0, 0, 42),
+        BackgroundColor3 = Color3.fromRGB(39, 51, 75),
+        BorderSizePixel = 0,
+        AutoButtonColor = true,
+        Font = Enum.Font.GothamMedium,
+        Text = label,
+        TextColor3 = Color3.fromRGB(235, 241, 255),
+        TextSize = 13,
+        TextWrapped = true,
+    })
+    add("UICorner", button, { CornerRadius = UDim.new(0, 10) })
+    button.Activated:Connect(callback)
+    buttons[key] = button
+    return button
+end
+
+local function send(action, argument)
+    Request:FireServer(action, argument)
+end
+
+makeButton("collect", "Collect base Coins", 1, function()
+    send("collect")
+end)
+makeButton("buyAuto", "Buy Auto Collector", 2, function()
+    send("buyAuto")
+end)
+makeButton("equipBest", "Equip strongest character", 3, function()
+    send("equipBest")
+end)
+makeButton("dicePool", "Switch Dice pool", 4, function()
+    send("nextDicePool")
+end)
+makeButton("rollDice", "Roll Dice", 5, function()
+    send("rollDice")
+end)
+makeButton("cycleEgg", "Select Egg", 6, function()
+    if not currentState or not currentState.eggs or #currentState.eggs == 0 then
+        return
+    end
+    local index = 1
+    for i, egg in ipairs(currentState.eggs) do
+        if egg.id == selectedEggId then
+            index = i
+            break
+        end
+    end
+    index = index % #currentState.eggs + 1
+    selectedEggId = currentState.eggs[index].id
+    renderState(currentState)
+end)
+makeButton("openEgg", "Open selected Egg", 7, function()
+    if selectedEggId then
+        send("openEgg", selectedEggId)
+    end
+end)
+makeButton("cycleWish", "Choose Wish target", 8, function()
+    if not currentState or not currentState.characters or #currentState.characters == 0 then
+        return
+    end
+    local index = 1
+    for i, character in ipairs(currentState.characters) do
+        if character.id == currentState.wishId then
+            index = i
+            break
+        end
+    end
+    index = index % #currentState.characters + 1
+    send("setWish", currentState.characters[index].id)
+end)
+makeButton("sellWeakest", "Sell weakest spare character", 9, function()
+    send("sellWeakest")
+end)
+makeButton("toggleAFK", "Toggle AFK rewards", 10, function()
+    send("toggleAFK")
+end)
+makeButton("rebirth", "Rebirth", 11, function()
+    send("rebirth")
+end)
+
+-- currentState และ selectedEggId ใช้กับปุ่มเลือกไข่/Wish
+renderState = function(state)
+    if not state then
+        return
+    end
+    currentState = state
+
+    statsLabel.Text = string.format(
+        "Coins: %d  |  Base stored: %d  |  Rebirths: %d\nEquipped: %s (Power %d)",
+        state.coins or 0,
+        state.stored or 0,
+        state.rebirths or 0,
+        state.equippedName or "None",
+        state.equippedPower or 0
+    )
+    detailLabel.Text = string.format(
+        "Auto: %s  |  AFK: %s  |  Dice: %s  |  Wish: %s  |  Units: %d",
+        state.autoCollector and "ON" or "OFF",
+        state.afk and "ON" or "OFF",
+        state.dicePool or "All",
+        state.wishName or "None",
+        state.inventoryCount or 0
+    )
+
+    if state.eggs and #state.eggs > 0 then
+        local found = false
+        for _, egg in ipairs(state.eggs) do
+            if egg.id == selectedEggId then
+                found = true
+                break
+            end
+        end
+        if not found then
+            selectedEggId = state.eggs[1].id
+        end
+        for _, egg in ipairs(state.eggs) do
+            if egg.id == selectedEggId then
+                buttons.cycleEgg.Text = "Select Egg: " .. egg.name
+                buttons.openEgg.Text = string.format("Open %s  |  %d Coins", egg.name, egg.price)
+                break
+            end
+        end
+    end
+
+    buttons.buyAuto.Text = state.autoCollector and "Auto Collector: OWNED" or string.format(
+        "Buy Auto Collector  |  %d Coins", state.autoCollectorPrice or 0
+    )
+    buttons.dicePool.Text = "Switch Dice pool  |  " .. (state.dicePool or "All")
+    buttons.rollDice.Text = string.format("Roll Dice  |  %d Coins", state.diceCost or 0)
+    buttons.cycleWish.Text = "Choose Wish target  |  " .. (state.wishName or "None")
+    buttons.toggleAFK.Text = state.afk and "Turn AFK rewards OFF" or "Turn AFK rewards ON"
+    buttons.rebirth.Text = string.format("Rebirth  |  need %d Coins", state.rebirthCost or 0)
+
+    if state.message and state.message ~= "" then
+        messageLabel.Text = state.message
+    end
+end
+
+Sync.OnClientEvent:Connect(renderState)
+
+local success, initialState = pcall(function()
+    return Fetch:InvokeServer()
+end)
+if success and initialState then
+    renderState(initialState)
+else
+    messageLabel.Text = "Could not load game data. Check that OrbitServer is installed."
+    messageLabel.TextColor3 = Color3.fromRGB(255, 150, 150)
+end
+
+============================================================
+จบไฟล์
+============================================================
